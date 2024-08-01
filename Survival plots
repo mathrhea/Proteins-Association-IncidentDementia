@@ -1,0 +1,100 @@
+## Set working dir-----------------------------------------
+setwd("/data/Wolfson-PNU-dementia/UKB_Projects/Rhea/")
+
+
+## Load packages------------------------------------------
+library(survival)
+library(dplyr)
+library(survminer)
+library(ggplot2)
+library(gridExtra)
+
+## Prepare data----------------------------------------------
+# Load data
+metadata_prot_QC<-read.csv("metadata_prot_QC_cleanname.csv")
+str(metadata_prot_QC)
+#categarization of ethnicity
+metadata_prot_QC$ethn <- as.character(metadata_prot_QC$ethn)
+metadata_prot_QC$ethn_group <- ifelse(metadata_prot_QC$ethn %in% c("White", "S.Asian", "Black"), metadata_prot_QC$ethn, "Other") 
+# Add age square 
+metadata_prot_QC$age2<-metadata_prot_QC$age*metadata_prot_QC$age
+
+## Fully adjusted dementia cox-------------------------------------------------
+# Create empty result table
+prot <- colnames(metadata_prot_QC[,18:92])
+matrix_res <- matrix(data = NA, nrow = length(prot), ncol = 4)
+rownames(matrix_res) <- prot
+colnames(matrix_res) <- paste(c(paste("coef"), paste("lower .95"), paste("upper .95"), paste("Pr(>|z|)")), sep = "")
+
+
+# Cox regression for loop
+for (i in prot) {
+  str(i)
+  cox_model <- coxph(Surv(time_dem, incident_dem) ~ metadata_prot_QC[, i] + age + age2 + factor(metadata_prot_QC$sex) + factor(metadata_prot_QC$apoe) + 
+                       bmi + edu + diabetes  + smoking + hypertension + alcohol + egfr + ethn_group, data = metadata_prot_QC, na.action = na.exclude)
+  sum_gwa <- summary(cox_model) # Save summaries table
+  coef_gwa <- sum_gwa$coefficients # Save coef table
+  conf_gwa <- confint(cox_model, level = 0.95) # Save conf int table
+  b_gwa <- coef_gwa[1, 2]  # Choose coef you want
+  L95_gwa <- exp(conf_gwa[1, 1])
+  U95_gwa <- exp(conf_gwa[1, 2])
+  p_gwa <- coef_gwa[1, 5]
+  # Add them in table
+  matrix_res[i, 1] <- b_gwa
+  matrix_res[i, 2] <- L95_gwa
+  matrix_res[i, 3] <- U95_gwa
+  matrix_res[i, 4] <- p_gwa
+}
+
+# FDR correction
+data_res_full_survival_plots <- as.data.frame(matrix_res)
+data_res_full_survival_plots$fdr <- p.adjust(data_res_full_survival_plots$`Pr(>|z|)`, method = "fdr")
+
+
+
+#Extract top_significant 10 proteins------------------------------------
+# Sort the dataframe by FDR values in ascending order
+df <- data_res_full_survival_plots[order(data_res_full_survival_plots$fdr), ]
+
+# Negative logarithm (base 10) of FDR values
+df$log_fdr <- -log10(df$fdr)
+df$prot <- row.names(df)
+
+# Filter top significant variables
+top_significant <- head(df[df$fdr < 0.05, ], 10)
+
+
+
+
+
+
+## Survival plot----------------------------------------------------------
+p <- list() #create a list of empty figures
+
+for (i in top_significant$prot){
+  print(i)
+  
+  # Create a column "prot_quart" each time for quartiles of proteins
+  metadata_prot_QC$prot_quart <- as.factor(ntile(metadata_prot_QC[,i], 4))
+  # Cox Regression
+  cox_model <- coxph(Surv(time_dem, incident_dem) ~ prot_quart + age + age2 + sex + apoe + 
+                       bmi + edu + diabetes  + smoking + hypertension + alcohol + egfr + ethn_group, 
+                       data = metadata_prot_QC, na.action = na.exclude)
+  
+  
+p[[i]] <- ggadjustedcurves(cox_model, data = metadata_prot_QC,
+                           variable  = "prot_quart",   # Variable of interest
+                           palette = "npg",             # nature publishing group color palettes
+                           curv.size = 2 ,
+                           ggtheme = theme_survminer(),
+                           ylim = c(0.97, 1),
+                           xlab="Time (y)",
+                           legend.title= i)
+
+}
+  ggsave("survival_plots_topproteins.pdf", marrangeGrob(grobs=p,nrow=1,ncol=1)) # save 10 figures into pdf 
+  dev.off()
+
+
+
+
