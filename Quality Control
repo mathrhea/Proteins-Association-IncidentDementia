@@ -1,0 +1,97 @@
+## Set working directory
+setwd("/data/Wolfson-PNU-dementia/UKB_Projects/Rhea/")
+
+## Load data
+data <- read.csv("metadata_proteomics.csv")
+
+which(colnames(data) == "ML_PROT_f30900_ADGRE5_54_0") # the position of first protein
+
+colSums(!is.na(data[,18:92])) ##this is how many measurement each protein has 
+
+
+
+## Eliminating individuals without proteomics data------------------------------ 
+missing_rows <- rowSums(is.na(data[,18:92])) ##there is 75 proteins
+missing_rows
+
+sum(missing_rows == 75) ##449128 people have 75 proteins missing = this is all proteins so means they don't have proteomics data 
+
+data_prot <- data[missing_rows != 75, ]
+dim(data_prot) #52973    91
+
+##now out of these people with proteomics data, see how many NAs each person has 
+rowSums(is.na(data_prot[,18:92]))
+
+
+
+
+
+
+#Exclude individuals with more then 20% missingness -----------------------------------------------------------------------------
+row.names(data_prot) <- data_prot$eid
+# 1) Exclude individuals with missing data in more than 20% of proteins in rows
+data_prot.1<- data_prot[,18:92][which(rowMeans(is.na(data_prot[,18:92])) <0.2),]
+dim(data_prot.1) #44191    75 
+# 44191 individuals left
+
+# 2) Exclude proteins with missing data in more than 20% of individuals in Columns
+data_prot.2 <- data_prot.1[,which(colMeans(is.na(data_prot.1)) < 0.2)]
+dim(data_prot.2)#44191    75 
+
+#No proteins missing more than 20% individuals
+
+# 3) Bind to the metadata
+data_prot.3 <-merge(data_prot[,1:17],data_prot.2, by="row.names" )
+row.names(data_prot.3)<-data_prot.3$Row.names
+data_prot.3$Row.names<-NULL
+dim(data_prot.3)
+
+colnames(data_prot.3)
+
+prot_only <-data_prot.3[,18:92]
+
+
+# Imputation  -------------------------------------------------------------
+
+library(impute)
+
+# 1) Perform knn 10 imputation
+KNN_r <- impute.knn(as.matrix(prot_only), k=10)
+KNN_r2 <- as.data.frame(KNN_r$data)
+str(KNN_r2)
+dim(KNN_r2)
+
+# 2) Bind basic data to the metabolites
+imp_data<-cbind(data_prot.3[,1:17], KNN_r2)
+dim(imp_data) 
+
+write.csv(imp_data, "metadata_prot_QC.csv", row.names = FALSE)
+
+
+# Extract only protein names--------------------------------------------------- 
+metadata_prot_QC <- read.csv("metadata_prot_QC.csv")
+# split UKB protein names using _ 
+protnames_split <- strsplit(colnames(metadata_prot_QC)[18:92], "_")
+# Obtain a list of only protein names
+prot_newnames <- sapply(protnames_split, function(x) x[4])
+# Rename UKB protein names with only protein names
+colnames(metadata_prot_QC) <- c(colnames(metadata_prot_QC)[1:17],prot_newnames)
+
+write.csv(metadata_prot_QC, "metadata_prot_QC_cleanname.csv",row.names =FALSE)
+
+max(metadata_prot_QC$time_dem) ##finding the maximum time for development of dementia
+mean(metadata_prot_QC$time_dem) ##mean time of development of dementia 
+
+# selecting control cases -------------------------------------------------
+# library(MatchIt)
+
+#set.seed(2)
+#DementiaFMatches10 <-  matchit(incident_dem ~ sex + age + ethn + center,  data = imp_data, method = "nearest", ratio = 10, na.rm = TRUE)
+#summary(DementiaFMatches10)
+#matched_data <- match.data(DementiaFMatches10)
+#str(matched_data)
+#matched_data <- as.data.frame(matched_data)
+
+##now the data is cleared from variables/obs with more than 20% NAs, imputaed for NAs and 1:10 case controls are selected based on similarities
+#write.csv(matched_data, "matched_data.csv")
+
