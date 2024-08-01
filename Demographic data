@@ -1,0 +1,40 @@
+#set working dir
+setwd("/data/Wolfson-PNU-dementia/UKB_Projects/Rhea/")
+
+
+# Table . Baseline characteristics of the study participants -------------------
+# install.packages("tableone")
+library(tableone)
+
+
+# Load data--------------------------------------------------------------------table(-
+
+metadata_prot_QC<-read.csv("metadata_prot_QC_cleanname.csv")
+
+# Prepare data for demographics table
+metadata_prot_QC$incident_dem <- factor(metadata_prot_QC$incident_dem, labels=c("No incident dementia","Incident dementia"))
+metadata_prot_QC$ethn[metadata_prot_QC$ethn== "Unknown/NA"] <- NA
+metadata_prot_QC$edu[metadata_prot_QC$edu== "Unknown/NA"] <- NA
+metadata_prot_QC$diabetes[metadata_prot_QC$diabetes== "Unknown/NA"] <- NA
+metadata_prot_QC$smoking[metadata_prot_QC$smoking== "Unknown/NA"] <- NA
+metadata_prot_QC$hypertension[metadata_prot_QC$hypertension== "Unknown/NA"] <- NA
+metadata_prot_QC$alcohol[metadata_prot_QC$alcohol== "Unknown/NA"] <- NA
+metadata_prot_QC$ethn_group <- ifelse(metadata_prot_QC$ethn %in% c("White", "S.Asian", "Black"), metadata_prot_QC$ethn, "Other") 
+
+metadata_prot_QC$apoe <- factor(metadata_prot_QC$apoe)
+# Create demographic table grouped by dementia and no dementia.
+names(metadata_prot_QC)
+
+# Demographics to be present in table
+variables=c("age", "sex", "edu", "ethn_group", "apoe","bmi", "smoking", "alcohol", "diabetes", "hypertension")
+
+# Make table: continous variable will be calculated as mean（SD）， categorical variable will be calculated as percentage
+table= CreateTableOne(data = metadata_prot_QC, 
+                      vars = variables,
+                      strata = "incident_dem")
+table
+
+# print table to be exported to csv file
+table1 <- print(table, quote = FALSE, noSpaces = TRUE, printToggle = FALSE)
+
+write.csv(table1,"demotable.csv")
