@@ -1,0 +1,275 @@
+#set working dir
+setwd("/data/Wolfson-PNU-dementia/UKB_Projects/Rhea/")
+
+
+#installing survival
+#install.packages("BiocManager")
+#BiocManager::install("survival")
+
+library(survival)
+
+
+metadata_prot_QC<-read.csv("metadata_prot_QC_cleanname.csv")
+
+#postition of first and last protiens 
+#names(metadata_prot_QC)[(ncol(metadata_prot_QC)-4):ncol(metadata_prot_QC)]
+#which(colnames(metadata_prot_QC) == "ML_PROT_f30900_TNFRSF21_2729_0") 
+#which(colnames(metadata_prot_QC) =="ML_PROT_f30900_WFDC2_2891_0")
+
+#checking for NA in time column
+if (any(is.na(metadata_prot_QC$time_dem))) {
+  print("There are NA values in the time_dem column.")
+} else {
+  print("There are no NA values in the time_dem column.")
+}
+
+#categarization of ethnicity
+metadata_prot_QC$ethn <- as.character(metadata_prot_QC$ethn)
+metadata_prot_QC$ethn_group <- ifelse(metadata_prot_QC$ethn %in% c("White", "S.Asian", "Black"), metadata_prot_QC$ethn, "Other") 
+as.factor(metadata_prot_QC$ethn)
+
+#age square 
+metadata_prot_QC$age2<-metadata_prot_QC$age*metadata_prot_QC$age
+
+#NO protein adjustments to look at APOE effect 
+cox_model1 <- coxph(Surv(time_dem, incident_dem) ~ age + age2 + factor(metadata_prot_QC$sex) + factor(metadata_prot_QC$apoe) ,data = metadata_prot_QC, na.action = na.exclude)
+cox_zph <- cox.zph(cox_model) ## to check redisuals 
+cox_zph
+summary(cox_model1)
+
+#dementia cox without regression
+prot <- colnames(metadata_prot_QC[,18:92])
+matrix_res <- matrix(data = NA, nrow = length(prot), ncol = 4)
+rownames(matrix_res) <- prot
+colnames(matrix_res) <- paste(c(paste("coef"), paste("lower .95"), paste("upper .95"), paste("Pr(>|z|)")), sep = "")
+
+
+
+#dementia COX- adjusted for sex + age
+for (i in prot) {
+  str(i)
+  cox_model <- coxph(Surv(time_dem, incident_dem) ~ metadata_prot_QC[, i] + age + age2 + factor(metadata_prot_QC$sex), data = metadata_prot_QC, na.action = na.exclude)
+  sum_gwa <- summary(cox_model) # Save summaries table
+  coef_gwa <- sum_gwa$coefficients # Save coef table
+  conf_gwa <- confint(cox_model, level = 0.95) # Save conf int table
+  b_gwa <- coef_gwa[1, 2]  # Choose coef you want
+  L95_gwa <- exp(conf_gwa[1, 1])
+  U95_gwa <- exp(conf_gwa[1, 2])
+  p_gwa <- coef_gwa[1, 5]
+  # Add them in table
+  matrix_res[i, 1] <- b_gwa
+  matrix_res[i, 2] <- L95_gwa
+  matrix_res[i, 3] <- U95_gwa
+  matrix_res[i, 4] <- p_gwa
+}
+
+#tables for dementia proteins in basic cox
+data_res_basic <- as.data.frame(matrix_res)
+data_res_basic$fdr <- p.adjust(data_res_basic$`Pr(>|z|)`, method = "fdr")
+
+write.csv(data_res_basic, "dem_proteins_cox_basic.csv", row.names = TRUE)
+
+#dementia cox for age+sex+APOE
+for (i in prot) {
+  str(i)
+  cox_model <- coxph(Surv(time_dem, incident_dem) ~ metadata_prot_QC[, i] + age + age2 + factor(metadata_prot_QC$sex) + factor(metadata_prot_QC$apoe), data = metadata_prot_QC, na.action = na.exclude)
+  sum_gwa <- summary(cox_model) # Save summaries table
+  coef_gwa <- sum_gwa$coefficients # Save coef table
+  conf_gwa <- confint(cox_model, level = 0.95) # Save conf int table
+  b_gwa <- coef_gwa[1, 2]  # Choose coef you want
+  L95_gwa <- exp(conf_gwa[1, 1])
+  U95_gwa <- exp(conf_gwa[1, 2])
+  p_gwa <- coef_gwa[1, 5]
+  # Add them in table
+  matrix_res[i, 1] <- b_gwa
+  matrix_res[i, 2] <- L95_gwa
+  matrix_res[i, 3] <- U95_gwa
+  matrix_res[i, 4] <- p_gwa
+}
+
+#tables for dementia cox with age+apoe+sex
+data_res_apoe <- as.data.frame(matrix_res)
+data_res_apoe$fdr <- p.adjust(data_res_apoe$`Pr(>|z|)`, method = "fdr")
+
+write.csv(data_res_apoe, "dem_proteins_cox_apoe.csv", row.names = TRUE)
+
+
+#fully adjusted dementia cox
+for (i in prot) {
+  str(i)
+  cox_model <- coxph(Surv(time_dem, incident_dem) ~ metadata_prot_QC[, i] + age + age2 + factor(metadata_prot_QC$sex) + factor(metadata_prot_QC$apoe) + 
+                       bmi + edu + diabetes  + smoking + hypertension + alcohol + egfr + ethn_group, data = metadata_prot_QC, na.action = na.exclude)
+  sum_gwa <- summary(cox_model) # Save summaries table
+  coef_gwa <- sum_gwa$coefficients # Save coef table
+  conf_gwa <- confint(cox_model, level = 0.95) # Save conf int table
+  b_gwa <- coef_gwa[1, 2]  # Choose coef you want
+  L95_gwa <- exp(conf_gwa[1, 1])
+  U95_gwa <- exp(conf_gwa[1, 2])
+  p_gwa <- coef_gwa[1, 5]
+  # Add them in table
+  matrix_res[i, 1] <- b_gwa
+  matrix_res[i, 2] <- L95_gwa
+  matrix_res[i, 3] <- U95_gwa
+  matrix_res[i, 4] <- p_gwa
+}
+
+#saving tables for fully adjusted dementia cox
+data_res_full <- as.data.frame(matrix_res)
+data_res_full$fdr <- p.adjust(data_res_full$`Pr(>|z|)`, method = "fdr")
+
+write.csv(data_res_full, "dem_proteins_cox_full.csv", row.names = TRUE)
+
+
+#fully adjusted dementia cox without APOE
+for (i in prot) {
+  str(i)
+  cox_model <- coxph(Surv(time_dem, incident_dem) ~ metadata_prot_QC[, i] + age + age2 + factor(metadata_prot_QC$sex)  + 
+                       bmi + edu + diabetes  +smoking + hypertension + alcohol + egfr + ethn_group, data = metadata_prot_QC, na.action = na.exclude)
+  sum_gwa <- summary(cox_model) # Save summaries table
+  coef_gwa <- sum_gwa$coefficients # Save coef table
+  conf_gwa <- confint(cox_model, level = 0.95) # Save conf int table
+  b_gwa <- coef_gwa[1, 2]  # Choose coef you want
+  L95_gwa <- exp(conf_gwa[1, 1])
+  U95_gwa <- exp(conf_gwa[1, 2])
+  p_gwa <- coef_gwa[1, 5]
+  # Add them in table
+  matrix_res[i, 1] <- b_gwa
+  matrix_res[i, 2] <- L95_gwa
+  matrix_res[i, 3] <- U95_gwa
+  matrix_res[i, 4] <- p_gwa
+}
+
+#saving tables
+data_res_fullwoapoe <- as.data.frame(matrix_res)
+data_res_fullwoapoe$fdr <- p.adjust(data_res_fullwoapoe$`Pr(>|z|)`, method = "fdr")
+
+write.csv(data_res_fullwoapoe, "dem_proteins_cox_full_wo_apoe.csv", row.names = TRUE)
+
+
+
+
+
+
+# volcano plot ------------------------------------------------------------
+# Load the required libraries
+library(ggplot2)
+library(ggrepel)
+
+# volcano plot of dem basic-----------------------
+# Sort the dataframe by FDR values in ascending order
+df <- data_res_basic[order(data_res_basic$fdr), ]
+
+# Negative logarithm (base 10) of FDR values
+df$log_fdr <- -log10(df$fdr)
+
+df$prot <- row.names(df)
+# Filter top significant variables
+top_significant <- head(df[df$fdr < 0.05, ], 10)
+
+
+p <- ggplot(df, aes(x = coef, y = log_fdr, color = fdr < 0.05)) +
+  geom_point(size = 2) +
+  scale_color_manual(values = c("red", "black"), name = "FDR < 0.05") +  # Change legend title
+  geom_text_repel(data = top_significant, aes(label = prot), size = 5, show.legend = FALSE) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "blue3") +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "blue3") +  # Add vertical line at x = 1
+  labs(x = "Hazard Ratio", y = "-log10(FDR)",  # Adjust axis labels
+       title = "Model 1") +
+  theme_minimal() +
+  theme(plot.margin = margin(1, 1, 1, 1, "cm"),  # Adjust plot margins
+        axis.title = element_text(size = 16),  # Increase axis label size
+        axis.text = element_text(size = 16), 
+        plot.title = element_text(size = 18)) +  # Increase axis text size
+  coord_cartesian(ylim = c(min(df$log_fdr), max(df$log_fdr) + 1))  # Expand y-axis
+# Save plot with increased dimensions
+ggsave("volcanoplot_DEM_basic.png", plot = p, width = 10, height = 8, units = "in")
+
+
+
+
+# volcano plot of dementia- sex+age+apoe ------------------------------------------
+
+# Sort the dataframe by FDR values in ascending order
+df <- data_res_apoe[order(data_res_apoe$fdr), ]
+
+# Negative logarithm (base 10) of FDR values
+df$log_fdr <- -log10(df$fdr)
+df$prot <- row.names(df)
+
+# Filter top significant variables
+top_significant <- head(df[df$fdr < 0.05, ], 10)
+
+
+
+p <- ggplot(df, aes(x = coef, y = log_fdr, color = fdr < 0.05)) +
+  geom_point(size = 2) +
+  scale_color_manual(values = c("red", "black"), name = "FDR < 0.05") +  # Change legend title
+  geom_text_repel(data = top_significant, aes(label = prot), size = 5, show.legend = FALSE) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "blue3") +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "blue3") +  # Add vertical line at x = 1
+  labs(x = "Hazard Ratio", y = "-log10(FDR)",  # Adjust axis labels
+       title = "Model 2") +
+  theme_minimal() +
+  theme(plot.margin = margin(1, 1, 1, 1, "cm"),  # Adjust plot margins
+        axis.title = element_text(size = 16),  # Increase axis label size
+        axis.text = element_text(size = 16), 
+        plot.title = element_text(size = 18)) +  # Increase axis text size
+  coord_cartesian(ylim = c(min(df$log_fdr), max(df$log_fdr) + 1))  # Expand y-axis
+ggsave("volcanoplot_DEM_apoe.png", plot = p, width = 10, height = 8, units = "in")
+
+
+#volcano plot of dementia- fully adjusted 
+# Sort the dataframe by FDR values in ascending order
+df <- data_res_full[order(data_res_full$fdr), ]
+
+# Negative logarithm (base 10) of FDR values
+df$log_fdr <- -log10(df$fdr)
+df$prot <- row.names(df)
+
+# Filter top significant variables
+top_significant <- head(df[df$fdr < 0.05, ], 10)
+
+p <- ggplot(df, aes(x = coef, y = log_fdr, color = fdr < 0.05)) +
+  geom_point(size = 2) +
+  scale_color_manual(values = c("red", "black"), name = "FDR < 0.05") +  # Change legend title
+  geom_text_repel(data = top_significant, aes(label = prot), size = 5, show.legend = FALSE) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "blue3") +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "blue3") +  # Add vertical line at x = 1
+  labs(x = "Hazard Ratio", y = "-log10(FDR)",  # Adjust axis labels
+       title = "Model 3") +
+  theme_minimal() +
+  theme(plot.margin = margin(1, 1, 1, 1, "cm"),  # Adjust plot margins
+        axis.title = element_text(size = 16),  # Increase axis label size
+        axis.text = element_text(size = 16), 
+        plot.title = element_text(size = 18)) +  # Increase axis text size
+  coord_cartesian(ylim = c(min(df$log_fdr), max(df$log_fdr) + 1))  # Expand y-axis
+ggsave("volcanoplot_DEM_full.png", plot = p, width = 10, height = 8, units = "in")
+
+
+
+#volcano plot of dementia- fully adjusted without apoe
+# Sort the dataframe by FDR values in ascending order
+df <- data_res_fullwoapoe[order(data_res_fullwoapoe$fdr), ]
+
+# Negative logarithm (base 10) of FDR values
+df$log_fdr <- -log10(df$fdr)
+df$prot <- row.names(df)
+
+# Filter top significant variables
+top_significant <- head(df[df$fdr < 0.05, ], 10)
+
+p <- ggplot(df, aes(x = coef, y = log_fdr, color = fdr < 0.05)) +
+  geom_point(size = 2) +
+  scale_color_manual(values = c("red", "black"), name = "FDR < 0.05") +  # Change legend title
+  geom_text_repel(data = top_significant, aes(label = prot), size = 5, show.legend = FALSE) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "blue3") +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "blue3") +  # Add vertical line at x = 1
+  labs(x = "Hazard Ratio", y = "-log10(FDR)",  # Adjust axis labels
+       title = "Model 3") +
+  theme_minimal() +
+  theme(plot.margin = margin(1, 1, 1, 1, "cm"),  # Adjust plot margins
+        axis.title = element_text(size = 16),  # Increase axis label size
+        axis.text = element_text(size = 16), 
+        plot.title = element_text(size = 18)) +  # Increase axis text size
+  coord_cartesian(ylim = c(min(df$log_fdr), max(df$log_fdr) + 1))  # Expand y-axis
+ggsave("volcanoplot_DEM_full_wo_apoe.png", plot = p, width = 10, height = 8, units = "in")
