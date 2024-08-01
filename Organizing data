@@ -1,0 +1,165 @@
+## Set working directory
+setwd("/data/Wolfson-PNU-dementia/UKB_Projects/Rhea/")
+
+##Load packages
+# install.packages("BiocManager")
+# BiocManager::install("biomaRt")
+library(biomaRt) # The 
+
+## Upload data
+my_ukb_data<-readRDS("UKBRhea_78867r675516_250624.rds")
+data <- my_ukb_data
+
+
+## Extracting proteins (Can skip this part)-------------------------------------------------------------
+# Load original protein list
+protein_ids <- read.csv("Compared Protein list.csv",header = F)
+nrow(protein_ids)
+
+# Get protein symbols from the original protein IDs to adapt to the protein headers in UKB
+mart <- useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+
+prot_info <- getBM(
+  filters = "uniprotswissprot",
+  attributes = c("uniprotswissprot", "hgnc_symbol"),
+  values = protein_ids,
+  mart = mart
+)
+
+prot_info ## one missing protein "O151972" , search the protein manually in UniProt website
+prot_info[75,] <- c("O15197", "EPHB6") # Add the missing protein manually
+
+## only keep proteomics data at instance 0 
+which(colnames(data) == "ML_PROT_f30900_A1BG_1_0") ## 3520  is the first protein col at instance 0
+which(colnames(data) == "ML_PROT_f30900_AARSD1_3_2")## 6439  is the first protein col at instance 2
+proteins_0 <- data[, 3520:6438]
+
+## Extract proteins according to protein symbols in prot_info$hgnc_symbol
+pattern=paste0("_",prot_info$hgnc_symbol,"_", collapse = "|") ## add "_" to proteins names to avoid capturing proteins with similar names
+
+proteins <- proteins_0[, grep(pattern, colnames(proteins_0))] # search and select protein names in UKB protein headers 
+ncol(proteins)## 75
+
+##
+write.csv(proteins,"proteins.csv",row.names = FALSE)
+
+
+
+
+## Organising metadata---------------------------------------------------------
+## Some variable names are different from Dorsa's, need to check.
+eid <- data$eid
+apoe <- data$APOE4_alleles 
+age <- data$R_Age_f21003_0
+sex <- data$R_Sex_f31
+incident_dem <- data$R_ML_C42C240Xf41270f20002_Dementia_Incident
+incident_AD <- data$R_ML_C42C240Xf41270_Alzheimers_Incident
+
+time_dem <- data$ML_C42C240Xf41270f20002_DementiaDiagyr
+time_AD <- data$ML_C42C240Xf41270_AlzheimersDiagyr
+bmi <- data$R_BMI_f21001_0
+edu <- data$R_ML_Qualification_CompositeFinal_SecNonSec_f845f613
+ethn <- data$R_Ethnicity_f21000
+diabetes <- data$ML_C42C240Xf41270f20002_DiabetesType2
+smoking <- data$R_SmokeEver_f20160_0 ##ever smoked yes or no 
+hypertension <- data$ML_C42C240Xf41270f20002_Hypertension
+alcohol <- data$R_AlcStatus_f20117_0
+egfr <- data$creatinine_f30700_0_0
+center <- data$uk_biobank_assessment_centre_f54_0_0
+
+
+meta.data <- data.frame(eid= eid, age = age, sex = sex, apoe = apoe, incident_AD = incident_AD, time_AD = time_AD, time_dem = time_dem,
+                        incident_dem = incident_dem, bmi = bmi, edu = edu, ethn = ethn, diabetes = diabetes, smoking = smoking, 
+                        hypertension = hypertension, alcohol = alcohol, egfr = egfr, center = center)
+
+
+#Upload extracted protein data
+proteins <- read.csv("proteins.csv")
+head(proteins)
+
+#Combine meta data and proteins
+data <- cbind(meta.data, proteins)
+
+table(data$incident_dem)
+
+##organising time and incident for dem 
+data$incident_dem[is.na(data$incident_dem)] <- 2 ##setting incident == 2 for controls to distinguish them from 0 == prevalent cases
+
+##Removing prevelant incidents 
+data <- subset(data, incident_dem != 0)
+
+##now assigning zero to no dementia 
+data$incident_dem[data$incident_dem== 2] <- 0 ## from here dementia has incident == 1 and no dementia incident == 0
+
+##setting up the value for those who never developed dementia as the maximum time 
+censored_incidents <- is.na(data$time_dem)
+data$time_dem[censored_incidents] <- max(data$time_dem, na.rm = TRUE)
+str(data$time_dem)
+
+##organising time and incident for AD 
+table(data$incident_AD)
+data$incident_AD[is.na(data$incident_AD)] <- 0 ## Setting incident == 2 for controls to distinguish them from 0 == prevalent cases
+
+
+## Setting up the value for those who never developed dementia as the maximum time 
+censored_indices <- is.na(data$time_AD)
+data$time_AD[censored_indices] <- max(data$time_AD, na.rm = TRUE)
+str(data$time_AD)
+
+
+# for the demographics table ---------------------------------------------
+##step 1 and do the code below 
+data_all  <- data
+
+
+##age
+mean(data_all$age[data_all$incident_dem== 1], na.rm = TRUE)
+mean(data_all$age)
+
+##sex
+table(data_all$sex)
+table(data_all$sex[data_all$incident_dem== 1])
+
+##apoe
+table(data_all$apoe)
+table(data_all$apoe[data_all$incident_dem== 1])
+
+##ethn 
+table(data_all$ethn[data_all$incident_dem== 1])
+table(data_all$ethn[data_all$incident_AD== 1])
+table(data_all$ethn)
+
+##BMI
+mean(data_all$bmi[data_all$incident_dem== 1], na.rm = TRUE)
+mean(data_all$bmi, na.rm = TRUE)
+
+##smoking
+
+table(data_all$smoking[data_all$incident_dem== 1])
+table(data_all$smoking)
+
+##alcohol 
+table(data_all$alcohol[data_all$incident_dem== 1])
+table(data_all$alcohol)
+
+##hypertension 
+table(data_all$hypertension[data_all$incident_dem== 1])
+table(data_all$hypertension[data_all$incident_AD== 1])
+table(data_all$hypertension)
+
+##diabetes
+table(data_all$diabetes)
+table(data_all$diabetes[data_all$incident_dem== 1])
+
+##education 
+table(data_all$edu)
+table(data_all$edu[data_all$incident_dem== 1])
+
+##centre 
+table(data_all$center)
+table(data_all$center[data_all$incident_dem== 1])
+table(data_all$center[data_all$incident_AD== 1])
+
+
+###Save data with dementia/AD incidence and time to incidence
+write.csv(data_all, "metadata_proteomics.csv", row.names = FALSE)
